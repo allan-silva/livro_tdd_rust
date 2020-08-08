@@ -31,14 +31,25 @@ impl ConversorNumeroRomano {
 
     fn converte(&self, numero_romano : &str) -> Result<i32, String> {
         let mut valor = 0;
+        let mut ultimo_vizinho = 0;
 
-        for c in numero_romano.chars() {
-            valor += *self.symbols.get(&c).ok_or(format!("Caracter invalido: {}", c))?;
+        for c in numero_romano.chars().rev() {
+            let atual = *self.symbols
+                .get(&c)
+                .ok_or(format!("Caracter invalido: {}", c))?;
+
+            valor += atual * if atual < ultimo_vizinho {
+                -1
+            } else {
+                1
+            };
+            ultimo_vizinho = atual;
         }
 
         Ok(valor)
     }
 }
+
 
 #[cfg(test)]
 #[allow(non_snake_case)]
@@ -64,5 +75,26 @@ mod test {
         let romano = ConversorNumeroRomano::new();
         let numero = romano.converte("II");
         assert_eq!(Result::Ok(2), numero);
+    }
+
+    #[test]
+    fn deve_entender_quatro_simbolos_XXII() {
+        let romano = ConversorNumeroRomano::new();
+        let numero = romano.converte("XXII");
+        assert_eq!(Result::Ok(22), numero);
+    }
+
+    #[test]
+    fn deve_entender_numeros_como_IX() {
+        let romano = ConversorNumeroRomano::new();
+        let numero = romano.converte("IX");
+        assert_eq!(Result::Ok(9), numero);
+    }
+
+    #[test]
+    fn deve_entender_numeros_complexos_como_XXIV() {
+        let romano = ConversorNumeroRomano::new();
+        let numero = romano.converte("XXIV");
+        assert_eq!(Result::Ok(24), numero);
     }
 }
