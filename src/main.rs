@@ -6,6 +6,7 @@ mod romanos;
 
 #[allow(non_snake_case)]
 #[allow(dead_code)]
+#[allow(unreachable_patterns)]
 mod salario;
 
 
