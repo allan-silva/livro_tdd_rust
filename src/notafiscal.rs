@@ -39,7 +39,7 @@ impl<'a> GeradorNF<'a> {
         }
     }
 
-    fn gerar(&mut self, pedido: &Pedido) -> NotaFiscal {
+    fn gerar(self, pedido: &Pedido) -> NotaFiscal {
         let nf = NotaFiscal {
             cliente: pedido.cliente.clone(),
             data: Local::now(),
@@ -47,6 +47,7 @@ impl<'a> GeradorNF<'a> {
         };
 
         self.db.persiste(&nf);
+        self.sap_client.send(&nf);
 
         nf
     }
@@ -57,32 +58,57 @@ impl<'a> GeradorNF<'a> {
 #[allow(non_snake_case)]
 mod tests {
     use super::*;
+    use std::cell::RefCell;
 
 
-    struct SAPTestClient {}
-
-
-    impl SAPIntegration for SAPTestClient {
-        
-        fn send(&self, notafiscal : &NotaFiscal) {}
+    struct SAPMockClient {
+        send_call_count: RefCell<u32>
     }
 
 
-    struct DBTest {}
+    impl SAPMockClient {
+        fn new() -> SAPMockClient {
+            SAPMockClient {
+                send_call_count: RefCell::new(0)
+            }
+        }
+    }
 
 
-    impl DB for DBTest {
+    impl SAPIntegration for SAPMockClient {
+        fn send(&self, notafiscal : &NotaFiscal) {
+            *self.send_call_count.borrow_mut() += 1;
+        }
+    }
+
+
+    struct DBMock {
+        persiste_call_count: RefCell<u32>
+    }
+
+
+    impl DBMock {
+        fn new() -> DBMock {
+            DBMock {
+                persiste_call_count: RefCell::new(0)
+            }
+        }
+    }
+
+
+    impl DB for DBMock {
         fn persiste(&self, nota_fiscal: &NotaFiscal) {
+            *self.persiste_call_count.borrow_mut() += 1;
         }
     }
 
 
     #[test]
     fn deve_gerar_nf_com_impostos_descontados() {
-        let sap_test_client = SAPTestClient{};
-        let db_test = DBTest{};
+        let sap_test_client = SAPMockClient::new();
+        let db_test = DBMock::new();
 
-        let mut gerador_nf = GeradorNF::new(&db_test, &sap_test_client);
+        let gerador_nf = GeradorNF::new(&db_test, &sap_test_client);
 
         let pedido = Pedido {
             cliente: String::from("Allan"),
@@ -93,5 +119,7 @@ mod tests {
         let nf = gerador_nf.gerar(&pedido);
 
         assert_eq!(940f64, nf.valor);
+        assert_eq!(1, *sap_test_client.send_call_count.borrow());
+        assert_eq!(1, *db_test.persiste_call_count.borrow());
     }
 }
