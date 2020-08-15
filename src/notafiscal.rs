@@ -15,27 +15,20 @@ struct NotaFiscal {
 }
 
 
-trait SAPIntegration {
-    fn send(&self, nota_fiscal: &NotaFiscal);
-}
-
-
-trait DB {
-    fn persiste(&self, nota_fiscal: &NotaFiscal);
+trait AcaoAposGerarNota {
+    fn executa(&self, nf: &NotaFiscal);
 }
 
 
 struct GeradorNF<'a> {
-    sap_client: &'a dyn SAPIntegration,
-    db: &'a dyn DB
+    acoes_pos_geracao: &'a Vec<&'a Box<dyn AcaoAposGerarNota + 'a>>
 }
 
 
-impl<'a> GeradorNF<'a> {
-    fn new(db: &'a dyn DB, sap_client: &'a dyn SAPIntegration) -> Self {
+impl<'a> GeradorNF<'a>  {
+    fn new(acoes_pos_geracao: &'a Vec<&'a Box<dyn AcaoAposGerarNota + 'a>>) -> Self {
         GeradorNF {
-            sap_client,
-            db
+            acoes_pos_geracao
         }
     }
 
@@ -46,8 +39,9 @@ impl<'a> GeradorNF<'a> {
             valor: pedido.valor_total * 0.94
         };
 
-        self.db.persiste(&nf);
-        self.sap_client.send(&nf);
+        for acao in self.acoes_pos_geracao {
+            acao.executa(&nf);
+        }
 
         nf
     }
@@ -60,55 +54,29 @@ mod tests {
     use super::*;
     use std::cell::RefCell;
 
-
-    struct SAPMockClient {
-        send_call_count: RefCell<u32>
+    struct AcaoAposGerarNotaMock {
+        executa_call_count: RefCell<u32>
     }
 
-
-    impl SAPMockClient {
-        fn new() -> SAPMockClient {
-            SAPMockClient {
-                send_call_count: RefCell::new(0)
+    impl AcaoAposGerarNotaMock {
+        fn new() -> AcaoAposGerarNotaMock {
+            AcaoAposGerarNotaMock {
+                executa_call_count: RefCell::new(0)
             }
         }
     }
 
-
-    impl SAPIntegration for SAPMockClient {
-        fn send(&self, notafiscal : &NotaFiscal) {
-            *self.send_call_count.borrow_mut() += 1;
-        }
-    }
-
-
-    struct DBMock {
-        persiste_call_count: RefCell<u32>
-    }
-
-
-    impl DBMock {
-        fn new() -> DBMock {
-            DBMock {
-                persiste_call_count: RefCell::new(0)
-            }
-        }
-    }
-
-
-    impl DB for DBMock {
-        fn persiste(&self, nota_fiscal: &NotaFiscal) {
-            *self.persiste_call_count.borrow_mut() += 1;
+    impl AcaoAposGerarNota for &AcaoAposGerarNotaMock{
+        fn executa(&self, nf: &NotaFiscal) {
+            *self.executa_call_count.borrow_mut() += 1;
         }
     }
 
 
     #[test]
     fn deve_gerar_nf_com_impostos_descontados() {
-        let sap_test_client = SAPMockClient::new();
-        let db_test = DBMock::new();
-
-        let gerador_nf = GeradorNF::new(&db_test, &sap_test_client);
+        let acoes = vec![];
+        let gerador_nf = GeradorNF::new(&acoes);
 
         let pedido = Pedido {
             cliente: String::from("Allan"),
@@ -119,7 +87,29 @@ mod tests {
         let nf = gerador_nf.gerar(&pedido);
 
         assert_eq!(940f64, nf.valor);
-        assert_eq!(1, *sap_test_client.send_call_count.borrow());
-        assert_eq!(1, *db_test.persiste_call_count.borrow());
+    }
+
+    #[test]
+    fn deve_invocar_acoes_pos_geracao() {
+        let acao_1 = AcaoAposGerarNotaMock::new();
+        let acao_1_ref = Box::<dyn AcaoAposGerarNota>::from(box &acao_1);
+
+        let acao_2 = AcaoAposGerarNotaMock::new();
+        let acao_2_ref = Box::<dyn AcaoAposGerarNota>::from(box &acao_2);
+
+        let acoes = vec![&acao_1_ref, &acao_2_ref];
+
+        let gerador_nf = GeradorNF::new(&acoes);
+
+        let pedido = Pedido {
+            cliente: String::from("Allan"),
+            valor_total: 1000.0,
+            qtd_itens: 1
+        };
+
+        let nf = gerador_nf.gerar(&pedido);
+
+        assert_eq!(1, *acao_1.executa_call_count.borrow());
+        assert_eq!(1, *acao_2.executa_call_count.borrow());
     }
 }

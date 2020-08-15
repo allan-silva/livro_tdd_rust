@@ -1,3 +1,5 @@
+#![feature(box_syntax)]
+
 
 #[allow(non_snake_case)]
 #[allow(dead_code)]
